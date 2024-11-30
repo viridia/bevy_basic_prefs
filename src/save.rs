@@ -164,8 +164,9 @@ fn save_struct(strct: &dyn Struct, table: &mut toml::Table) {
             ReflectRef::List(_) => todo!(),
             ReflectRef::Array(_) => todo!(),
             ReflectRef::Map(_) => todo!(),
-            ReflectRef::Enum(_) | ReflectRef::Value(_) => {
-                save_value(field_reflect, strct.name_at(i).unwrap(), table);
+            ReflectRef::Set(_) => todo!(),
+            ReflectRef::Enum(_) | ReflectRef::Opaque(_) => {
+                store_prop(field_reflect, strct.name_at(i).unwrap(), table);
             }
         }
     }
@@ -204,8 +205,9 @@ fn save_tuple_struct(tuple_struct: &dyn TupleStruct, key: &'static str, table: &
             ReflectRef::List(_) => todo!(),
             ReflectRef::Array(_) => todo!(),
             ReflectRef::Map(_) => todo!(),
-            ReflectRef::Enum(_) | ReflectRef::Value(_) => {
-                save_value(field_reflect, key, table);
+            ReflectRef::Set(_) => todo!(),
+            ReflectRef::Enum(_) | ReflectRef::Opaque(_) => {
+                store_prop(field_reflect, key, table);
             }
         }
     }
@@ -239,74 +241,148 @@ fn save_enum(enum_ref: &dyn Enum, key: &'static str, table: &mut toml::Table) {
     table.insert(key.to_string(), v);
 }
 
-fn save_value(value: &dyn Reflect, key: &str, table: &mut toml::Table) {
+/// Encode a reflected property and store it in the table with the given key.
+fn store_prop(value: &dyn PartialReflect, key: &str, table: &mut toml::Table) {
     match value.reflect_ref() {
-        ReflectRef::Struct(_) => todo!(),
+        ReflectRef::Struct(st) => {
+            let mut field_table = toml::Table::new();
+            save_struct(st, &mut field_table);
+            table.insert(key.to_string(), toml::Value::Table(field_table));
+        }
+
         ReflectRef::TupleStruct(_) => todo!(),
         ReflectRef::Tuple(_) => todo!(),
         ReflectRef::List(_) => todo!(),
         ReflectRef::Array(_) => todo!(),
         ReflectRef::Map(_) => todo!(),
+        ReflectRef::Set(_) => todo!(),
+
         ReflectRef::Enum(en) => {
             let type_path = value.get_represented_type_info().unwrap().type_path();
             if type_path.starts_with("core::option::Option") {
                 // None values just leave out the key.
                 if en.variant_name() == "Some" {
                     let some_value = en.field_at(0).unwrap();
-                    save_value(some_value, key, table);
+                    store_prop(some_value, key, table);
                 }
             } else {
                 warn!("Preferences: Unsupported enum type: {:?}", type_path);
             }
         }
-        ReflectRef::Value(val) => {
-            if let Some(f) = value.downcast_ref::<f32>() {
+
+        ReflectRef::Opaque(val) => {
+            if let Some(f) = value.try_downcast_ref::<f32>() {
                 let v = toml::Value::Float(*f as f64);
                 table.insert(key.to_string(), v);
-            } else if let Some(f) = value.downcast_ref::<f64>() {
+            } else if let Some(f) = value.try_downcast_ref::<f64>() {
                 let v = toml::Value::Float(*f);
                 table.insert(key.to_string(), v);
-            } else if let Some(i) = value.downcast_ref::<i8>() {
+            } else if let Some(i) = value.try_downcast_ref::<i8>() {
                 let v = toml::Value::Integer(*i as i64);
                 table.insert(key.to_string(), v);
-            } else if let Some(i) = value.downcast_ref::<i16>() {
+            } else if let Some(i) = value.try_downcast_ref::<i16>() {
                 let v = toml::Value::Integer(*i as i64);
                 table.insert(key.to_string(), v);
-            } else if let Some(i) = value.downcast_ref::<i32>() {
+            } else if let Some(i) = value.try_downcast_ref::<i32>() {
                 let v = toml::Value::Integer(*i as i64);
                 table.insert(key.to_string(), v);
-            } else if let Some(i) = value.downcast_ref::<i64>() {
+            } else if let Some(i) = value.try_downcast_ref::<i64>() {
                 let v = toml::Value::Integer(*i);
                 table.insert(key.to_string(), v);
-            } else if let Some(i) = value.downcast_ref::<u8>() {
+            } else if let Some(i) = value.try_downcast_ref::<u8>() {
                 let v = toml::Value::Integer(*i as i64);
                 table.insert(key.to_string(), v);
-            } else if let Some(i) = value.downcast_ref::<u16>() {
+            } else if let Some(i) = value.try_downcast_ref::<u16>() {
                 let v = toml::Value::Integer(*i as i64);
                 table.insert(key.to_string(), v);
-            } else if let Some(i) = value.downcast_ref::<u32>() {
+            } else if let Some(i) = value.try_downcast_ref::<u32>() {
                 let v = toml::Value::Integer(*i as i64);
                 table.insert(key.to_string(), v);
-            } else if let Some(i) = value.downcast_ref::<u64>() {
+            } else if let Some(i) = value.try_downcast_ref::<u64>() {
                 if *i <= i64::MAX as u64 {
                     let v = toml::Value::Integer(*i as i64);
                     table.insert(key.to_string(), v);
                 } else {
                     warn!("Preferences: u64 value too large: {}", i);
                 }
-            } else if let Some(i) = value.downcast_ref::<usize>() {
+            } else if let Some(i) = value.try_downcast_ref::<usize>() {
                 if *i <= i64::MAX as usize {
                     let v = toml::Value::Integer(*i as i64);
                     table.insert(key.to_string(), v);
                 } else {
                     warn!("Preferences: usize value too large: {}", i);
                 }
-            } else if let Some(s) = value.downcast_ref::<String>() {
+            } else if let Some(s) = value.try_downcast_ref::<String>() {
                 let v = toml::Value::String(s.clone());
                 table.insert(key.to_string(), v);
             } else {
                 warn!("Preferences: Unsupported type: {:?}", val);
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use toml::Table;
+
+    #[derive(Reflect)]
+    struct TestStruct {
+        field1: f32,
+        field2: String,
+    }
+
+    #[test]
+    fn test_store_prop_f32() {
+        let mut table = Table::new();
+        let value: &dyn PartialReflect = &42.0f32;
+        store_prop(value, "test_f32", &mut table);
+        assert_eq!(table.get("test_f32").unwrap().as_float().unwrap(), 42.0);
+    }
+
+    #[test]
+    fn test_store_prop_string() {
+        let mut table = Table::new();
+        let value: &dyn PartialReflect = &"test_string".to_string();
+        store_prop(value, "test_string", &mut table);
+        assert_eq!(
+            table.get("test_string").unwrap().as_str().unwrap(),
+            "test_string"
+        );
+    }
+
+    #[test]
+    fn test_store_prop_struct() {
+        let mut table = Table::new();
+        let test_struct = TestStruct {
+            field1: 3.1,
+            field2: "hello".to_string(),
+        };
+        let value: &dyn PartialReflect = &test_struct;
+        store_prop(value, "test_struct", &mut table);
+        assert!(table.get("test_struct").is_some());
+        let struct_table = table.get("test_struct").unwrap().as_table().unwrap();
+        // assert_eq!(struct_table.get("field1").unwrap().as_float().unwrap(), 3.1);
+        assert_eq!(
+            struct_table.get("field2").unwrap().as_str().unwrap(),
+            "hello"
+        );
+    }
+
+    #[test]
+    fn test_store_prop_option_some() {
+        let mut table = Table::new();
+        let value: &dyn PartialReflect = &Some(42i32);
+        store_prop(value, "test_option", &mut table);
+        assert_eq!(table.get("test_option").unwrap().as_integer().unwrap(), 42);
+    }
+
+    #[test]
+    fn test_store_prop_option_none() {
+        let mut table = Table::new();
+        let value: &dyn PartialReflect = &Option::<i32>::None;
+        store_prop(value, "test_option", &mut table);
+        assert!(table.get("test_option").is_none());
     }
 }
